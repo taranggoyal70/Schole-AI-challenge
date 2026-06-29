@@ -1,0 +1,30 @@
+{
+  "name": "schole-evolve",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/libre-caslon-display": "^5.2.7",
+    "@phosphor-icons/react": "^2.1.10",
+    "framer-motion": "^12.23.24",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.4.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.1",
+    "tsx": "^4.22.4",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.2",
+    "vitest": "^4.0.15"
+  }
+}
