@@ -39,6 +39,7 @@ export interface Concept {
     secondary: string;
   };
   genes: PageGenes;
+  modelProfile?: Partial<Record<keyof PageGenes, ConceptId>>;
   sectionLabels: string[];
 }
 
@@ -49,6 +50,19 @@ export interface SimulatorConfig {
   roiPriority: number;
   trustPriority: number;
   mobileShare: number;
+}
+
+export interface DecisionPolicy {
+  minimumQualifiedDemosPerArm: number;
+  minimumPracticalLift: number;
+  minimumProbabilityOfPracticalLift: number;
+  minimumProbabilityBest: number;
+}
+
+export interface ExperimentDesign {
+  mode: "multi_arm" | "pairwise";
+  baselineId: ConceptId;
+  policy: DecisionPolicy;
 }
 
 export interface Visitor {
@@ -79,14 +93,24 @@ export interface SessionOutcome {
 export interface VariantMetrics {
   conceptId: ConceptId;
   sessions: number;
+  demoCompletions: number;
   qualifiedDemos: number;
   qualifiedDemoRate: number;
+  demoCompletionRate: number;
+  qualificationRate: number;
+  unqualifiedDemoShare: number;
+  mobileQualifiedDemoRate: number;
+  desktopQualifiedDemoRate: number;
   ctaRate: number;
   deepScrollRate: number;
   interactionRate: number;
+  proofEngagementRate: number;
+  proofToCtaRate: number;
   averageDwell: number;
   probabilityBest: number;
-  probabilityBeatControl: number;
+  probabilityBeatBaseline: number;
+  probabilityOfPracticalLift: number;
+  probabilityBaselineHasPracticalLift: number;
   credibleLow: number;
   credibleHigh: number;
   upliftLow: number;
@@ -95,14 +119,17 @@ export interface VariantMetrics {
 
 export interface ExperimentResult {
   config: SimulatorConfig;
+  design: ExperimentDesign;
   metrics: VariantMetrics[];
   sessions: SessionOutcome[];
   winnerId: ConceptId | null;
+  allocation: Partial<Record<ConceptId, number>>;
+  sampleRatioMismatch: boolean;
   decision:
     | "winner"
     | "no_decision_probability"
     | "no_decision_volume"
-    | "no_decision_interval";
+    | "no_decision_practical";
 }
 
 export interface LineageItem {

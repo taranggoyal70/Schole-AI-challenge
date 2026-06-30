@@ -24,13 +24,15 @@ import { IntroStage } from "./components/IntroStage";
 import { SimulationStage } from "./components/SimulationStage";
 import { InsightsPanel } from "./components/InsightsPanel";
 import { VisitorReplay } from "./components/VisitorReplay";
-import { concepts } from "./data/concepts";
+import { conceptById, concepts } from "./data/concepts";
+import { generateChallenger } from "./lib/evolution";
 import {
   defaultConfig,
+  defaultDecisionPolicy,
   runExperiment,
   runHoldout,
 } from "./lib/simulation";
-import type { Concept, SimulatorConfig } from "./types";
+import type { Concept, DecisionPolicy, SimulatorConfig } from "./types";
 
 const ResultsPanel = lazy(() =>
   import("./components/ResultsPanel").then((module) => ({
@@ -58,6 +60,7 @@ function EvidenceStage({
 }: {
   result: ReturnType<typeof runExperiment>;
 }) {
+  const winner = result.winnerId ? conceptById[result.winnerId] : null;
   return (
     <div className="stage-content evidence-stage">
       <div className="stage-heading">
@@ -65,11 +68,16 @@ function EvidenceStage({
           <ChartBar weight="duotone" />
           Bayesian decision policy
         </span>
-        <h1>Variant B earns the incumbent seat.</h1>
+        <h1>
+          {winner
+            ? `Variant ${winner.shortLabel} earns the incumbent seat.`
+            : "The evidence refuses to crown a winner."}
+        </h1>
         <p>
-          ROI framing produces the strongest qualified-demo outcome and clears
-          every pre-declared evidence threshold. Behavior signals explain why;
-          they do not determine the winner.
+          {winner
+            ? `${winner.name} produces the strongest qualified-meeting outcome and clears every pre-declared evidence threshold.`
+            : "No concept has cleared the complete volume, probability, and practical-lift policy."}{" "}
+          Behavior signals explain why; they do not determine the winner.
         </p>
       </div>
       <Suspense fallback={<div className="panel-skeleton">Preparing evidence…</div>}>
@@ -85,16 +93,44 @@ export default function App() {
   const [step, setStep] = useState(0);
   const [selectedConcept, setSelectedConcept] = useState<Concept | null>(null);
   const [labConfig, setLabConfig] = useState<SimulatorConfig>(defaultConfig);
+  const [labPolicy, setLabPolicy] =
+    useState<DecisionPolicy>(defaultDecisionPolicy);
   const [isRunning, setIsRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [progress, setProgress] = useState(0);
   const runTimerRef = useRef<number | null>(null);
 
-  const result = useMemo(() => runExperiment(defaultConfig, concepts), []);
-  const holdout = useMemo(() => runHoldout(defaultConfig), []);
+  const result = useMemo(
+    () =>
+      runExperiment(defaultConfig, concepts, {
+        mode: "multi_arm",
+        baselineId: concepts[0].id,
+        policy: defaultDecisionPolicy,
+      }),
+    [],
+  );
+  const incumbent = result.winnerId
+    ? conceptById[result.winnerId]
+    : concepts[0];
+  const generation = useMemo(() => generateChallenger(result), [result]);
+  const holdout = useMemo(
+    () =>
+      runHoldout(
+        defaultConfig,
+        incumbent,
+        generation.concept,
+        defaultDecisionPolicy,
+      ),
+    [generation.concept, incumbent],
+  );
   const labResult = useMemo(
-    () => runExperiment(labConfig, concepts),
-    [labConfig],
+    () =>
+      runExperiment(labConfig, concepts, {
+        mode: "multi_arm",
+        baselineId: concepts[0].id,
+        policy: labPolicy,
+      }),
+    [labConfig, labPolicy],
   );
 
   useEffect(() => {
@@ -161,7 +197,13 @@ export default function App() {
         />
       );
     if (step === 4) return <EvidenceStage result={result} />;
-    if (step === 5) return <EvolutionStage onOpen={setSelectedConcept} />;
+    if (step === 5)
+      return (
+        <EvolutionStage
+          generation={generation}
+          onOpen={setSelectedConcept}
+        />
+      );
     return <HoldoutStage discovery={result} holdout={holdout} />;
   })();
 
@@ -278,8 +320,10 @@ export default function App() {
         <Suspense fallback={<div className="panel-skeleton">Loading experiment lab…</div>}>
           <LabPanel
             config={labConfig}
+            policy={labPolicy}
             result={labResult}
             onConfig={setLabConfig}
+            onPolicy={setLabPolicy}
             onRerun={() =>
               setLabConfig((current) => ({
                 ...current,

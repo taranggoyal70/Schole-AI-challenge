@@ -138,7 +138,7 @@ export const evolvedConcept: Concept = {
   shortLabel: "F",
   name: "The adoption plan",
   hypothesis:
-    "Combining ROI urgency, a diagnostic interaction, and research-backed proof will outperform the strongest initial concept on unseen traffic.",
+    "Combining the strongest current outcome, interaction, and proof-engagement sources will outperform the incumbent on unseen traffic.",
   color: "#bb2f91",
   accent: "#f27d62",
   hero: {

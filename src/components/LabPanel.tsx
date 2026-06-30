@@ -3,8 +3,11 @@ import {
   Info,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
-import type { SimulatorConfig } from "../types";
-import type { ExperimentResult } from "../types";
+import type {
+  DecisionPolicy,
+  ExperimentResult,
+  SimulatorConfig,
+} from "../types";
 import { RobustnessObservatory } from "./RobustnessObservatory";
 import { ResultsPanel } from "./ResultsPanel";
 
@@ -75,13 +78,17 @@ const sliders: SliderDefinition[] = [
 
 export function LabPanel({
   config,
+  policy,
   result,
   onConfig,
+  onPolicy,
   onRerun,
 }: {
   config: SimulatorConfig;
+  policy: DecisionPolicy;
   result: ExperimentResult;
   onConfig: (config: SimulatorConfig) => void;
+  onPolicy: (policy: DecisionPolicy) => void;
   onRerun: () => void;
 }) {
   return (
@@ -199,6 +206,105 @@ export function LabPanel({
               </label>
             );
           })}
+          <div className="lab-policy-heading">
+            <span>Decision contract</span>
+            <strong>Pre-declared policy</strong>
+          </div>
+          <label className="lab-slider">
+            <span>
+              <strong>Minimum worthwhile lift</strong>
+              <output>
+                {(policy.minimumPracticalLift * 100).toFixed(2)} pts
+              </output>
+            </span>
+            <small>Absolute qualified-meeting conversion lift.</small>
+            <input
+              type="range"
+              aria-label="Minimum worthwhile lift"
+              min={0.001}
+              max={0.03}
+              step={0.001}
+              value={policy.minimumPracticalLift}
+              onChange={(event) =>
+                onPolicy({
+                  ...policy,
+                  minimumPracticalLift: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="lab-slider">
+            <span>
+              <strong>Practical-lift confidence</strong>
+              <output>
+                {Math.round(
+                  policy.minimumProbabilityOfPracticalLift * 100,
+                )}
+                %
+              </output>
+            </span>
+            <small>Required posterior probability of clearing the lift.</small>
+            <input
+              type="range"
+              aria-label="Practical-lift confidence"
+              min={0.8}
+              max={0.99}
+              step={0.01}
+              value={policy.minimumProbabilityOfPracticalLift}
+              onChange={(event) =>
+                onPolicy({
+                  ...policy,
+                  minimumProbabilityOfPracticalLift: Number(
+                    event.target.value,
+                  ),
+                })
+              }
+            />
+          </label>
+          <label className="lab-slider">
+            <span>
+              <strong>Probability-best threshold</strong>
+              <output>
+                {Math.round(policy.minimumProbabilityBest * 100)}%
+              </output>
+            </span>
+            <small>Discovery-only protection against a noisy leader.</small>
+            <input
+              type="range"
+              aria-label="Probability-best threshold"
+              min={0.5}
+              max={0.99}
+              step={0.01}
+              value={policy.minimumProbabilityBest}
+              onChange={(event) =>
+                onPolicy({
+                  ...policy,
+                  minimumProbabilityBest: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="lab-slider">
+            <span>
+              <strong>Minimum outcome volume</strong>
+              <output>{policy.minimumQualifiedDemosPerArm}/arm</output>
+            </span>
+            <small>Qualified meetings required in every treatment arm.</small>
+            <input
+              type="range"
+              aria-label="Minimum outcome volume"
+              min={5}
+              max={100}
+              step={5}
+              value={policy.minimumQualifiedDemosPerArm}
+              onChange={(event) =>
+                onPolicy({
+                  ...policy,
+                  minimumQualifiedDemosPerArm: Number(event.target.value),
+                })
+              }
+            />
+          </label>
           <div className="assumption-note">
             <Info weight="fill" />
             <span>
@@ -213,6 +319,7 @@ export function LabPanel({
 
       <RobustnessObservatory
         config={config}
+        policy={policy}
         onInspectSeed={(seed) => onConfig({ ...config, seed })}
       />
     </main>

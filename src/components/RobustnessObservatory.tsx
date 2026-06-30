@@ -18,7 +18,7 @@ import {
   type RobustnessCohort,
   type RobustnessStudy,
 } from "../lib/robustness";
-import type { SimulatorConfig } from "../types";
+import type { DecisionPolicy, SimulatorConfig } from "../types";
 
 function pct(value: number, digits = 0) {
   return `${(value * 100).toFixed(digits)}%`;
@@ -47,8 +47,8 @@ function decisionExplanation(cohort: RobustnessCohort, mode: "discovery" | "hold
       ? cohort.discovery.decision
       : cohort.holdout.decision;
 
-  if (decision === "no_decision_interval") {
-    return "The observed leader is promising, but the 95% uplift interval still crosses zero.";
+  if (decision === "no_decision_practical") {
+    return "The observed leader has not established the declared minimum worthwhile lift.";
   }
   if (decision === "no_decision_probability") {
     return "The observed leader has not cleared every declared probability threshold.";
@@ -56,14 +56,16 @@ function decisionExplanation(cohort: RobustnessCohort, mode: "discovery" | "hold
   if (decision === "no_decision_volume") {
     return "The cohort has not produced the minimum number of qualified demos.";
   }
-  return "This cohort clears the complete probability, interval, and volume policy.";
+  return "This cohort clears the complete probability, practical-lift, and volume policy.";
 }
 
 export function RobustnessObservatory({
   config,
+  policy,
   onInspectSeed,
 }: {
   config: SimulatorConfig;
+  policy: DecisionPolicy;
   onInspectSeed: (seed: number) => void;
 }) {
   const [study, setStudy] = useState<RobustnessStudy | null>(null);
@@ -73,7 +75,7 @@ export function RobustnessObservatory({
     "discovery" | "holdout"
   >("holdout");
   const runToken = useRef(0);
-  const currentSignature = robustnessConfigSignature(config);
+  const currentSignature = robustnessConfigSignature(config, policy);
   const isStale = Boolean(
     study && study.configSignature !== currentSignature,
   );
@@ -93,13 +95,14 @@ export function RobustnessObservatory({
     const token = runToken.current + 1;
     runToken.current = token;
     const snapshot = { ...config };
+    const policySnapshot = { ...policy };
     const cohorts: RobustnessCohort[] = [];
 
     setIsRunning(true);
     setProgress(0);
 
     for (let index = 0; index < ROBUSTNESS_COHORT_COUNT; index += 1) {
-      cohorts.push(runRobustnessCohort(snapshot, index));
+      cohorts.push(runRobustnessCohort(snapshot, index, policySnapshot));
       if (runToken.current !== token) return;
       setProgress(index + 1);
 
@@ -109,7 +112,7 @@ export function RobustnessObservatory({
     }
 
     if (runToken.current !== token) return;
-    setStudy(summarizeRobustnessStudy(snapshot, cohorts));
+    setStudy(summarizeRobustnessStudy(snapshot, cohorts, policySnapshot));
     setCounterexampleMode("holdout");
     setIsRunning(false);
   }
@@ -140,6 +143,7 @@ export function RobustnessObservatory({
     counterexampleMode === "discovery"
       ? study?.discoveryCounterexample
       : study?.holdoutCounterexample;
+  const studyIncumbent = study ? conceptById[study.incumbentId] : null;
 
   return (
     <section
@@ -225,9 +229,10 @@ export function RobustnessObservatory({
           <div className="robustness-kpis">
             <article>
               <span>Incumbent stability</span>
-              <strong>{pct(study.roiStability)}</strong>
+              <strong>{pct(study.incumbentStability)}</strong>
               <small>
-                Variant B selected in {study.discoveryCounts.roi}/
+                {studyIncumbent?.name} selected in{" "}
+                {study.discoveryCounts[study.incumbentId]}/
                 {study.cohortCount} cohorts
               </small>
             </article>
@@ -243,7 +248,7 @@ export function RobustnessObservatory({
               <span>Challenger holdout</span>
               <strong>{pct(study.challengerHoldoutRate)}</strong>
               <small>
-                Variant F cleared {study.holdoutCounts.evolved}/
+                The challenger cleared {study.holdoutCounts.challenger}/
                 {study.cohortCount} unseen cohorts
               </small>
             </article>
@@ -293,18 +298,18 @@ export function RobustnessObservatory({
               </header>
               <div
                 className="holdout-stack"
-                aria-label={`${study.holdoutCounts.evolved} challenger wins, ${study.holdoutCounts.roi} incumbent wins, ${study.holdoutCounts.no_decision} no decisions`}
+                aria-label={`${study.holdoutCounts.challenger} challenger wins, ${study.holdoutCounts.incumbent} incumbent wins, ${study.holdoutCounts.no_decision} no decisions`}
               >
                 <i
                   className="challenger"
                   style={{
-                    width: `${(study.holdoutCounts.evolved / study.cohortCount) * 100}%`,
+                    width: `${(study.holdoutCounts.challenger / study.cohortCount) * 100}%`,
                   }}
                 />
                 <i
                   className="incumbent"
                   style={{
-                    width: `${(study.holdoutCounts.roi / study.cohortCount) * 100}%`,
+                    width: `${(study.holdoutCounts.incumbent / study.cohortCount) * 100}%`,
                   }}
                 />
                 <i
@@ -317,11 +322,11 @@ export function RobustnessObservatory({
               <div className="holdout-legend">
                 <span>
                   <i className="challenger" />
-                  Variant F <strong>{study.holdoutCounts.evolved}</strong>
+                  Challenger <strong>{study.holdoutCounts.challenger}</strong>
                 </span>
                 <span>
                   <i className="incumbent" />
-                  Variant B <strong>{study.holdoutCounts.roi}</strong>
+                  Incumbent <strong>{study.holdoutCounts.incumbent}</strong>
                 </span>
                 <span>
                   <i className="no-decision" />
@@ -376,7 +381,8 @@ export function RobustnessObservatory({
                       ? selectedCounterexample.discovery.winnerId
                         ? `${conceptById[selectedCounterexample.discovery.winnerId].name} wins`
                         : "Discovery returns no winner"
-                      : selectedCounterexample.holdout.winnerId === "roi"
+                      : selectedCounterexample.holdout.winnerId ===
+                          selectedCounterexample.holdout.incumbentId
                         ? "Incumbent retains the seat"
                         : "Holdout returns no decision"}
                   </span>
@@ -389,7 +395,7 @@ export function RobustnessObservatory({
                   <small>
                     {counterexampleMode === "discovery"
                       ? `${conceptById[selectedCounterexample.discovery.leaderId].name} leads at ${pct(selectedCounterexample.discovery.leaderRate, 2)} with ${pct(selectedCounterexample.discovery.leaderProbabilityBest)} probability best.`
-                      : `Variant F: ${pct(selectedCounterexample.holdout.challengerRate, 2)} vs. Variant B: ${pct(selectedCounterexample.holdout.incumbentRate, 2)} · uplift interval ${signedPoints(selectedCounterexample.holdout.challengerUpliftLow)} to ${signedPoints(selectedCounterexample.holdout.challengerUpliftHigh)}.`}
+                      : `${conceptById[selectedCounterexample.holdout.challengerId].name}: ${pct(selectedCounterexample.holdout.challengerRate, 2)} vs. ${conceptById[selectedCounterexample.holdout.incumbentId].name}: ${pct(selectedCounterexample.holdout.incumbentRate, 2)} · uplift interval ${signedPoints(selectedCounterexample.holdout.challengerUpliftLow)} to ${signedPoints(selectedCounterexample.holdout.challengerUpliftHigh)}.`}
                   </small>
                 </div>
                 <button

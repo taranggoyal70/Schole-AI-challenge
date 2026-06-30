@@ -22,6 +22,16 @@ function percent(value: number, digits = 1) {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
+function noDecisionReason(result: ExperimentResult) {
+  if (result.decision === "no_decision_volume") {
+    return "Every arm must reach the declared qualified-meeting volume before a decision.";
+  }
+  if (result.decision === "no_decision_probability") {
+    return "The observed leader has not cleared the multi-arm probability threshold.";
+  }
+  return "Neither side has established the declared minimum worthwhile lift with enough probability.";
+}
+
 export function ResultsPanel({
   result,
   compact = false,
@@ -36,6 +46,40 @@ export function ResultsPanel({
     ratePct: metric.qualifiedDemoRate * 100,
   }));
   const winner = result.winnerId ? conceptById[result.winnerId] : null;
+  const policy = result.design.policy;
+  const baseline = conceptById[result.design.baselineId];
+  const decisionMetric =
+    result.metrics.find((metric) => metric.conceptId === result.winnerId) ??
+    [...result.metrics].sort(
+      (a, b) => b.qualifiedDemoRate - a.qualifiedDemoRate,
+    )[0];
+  const rankedMetrics = [...result.metrics].sort(
+    (a, b) => b.qualifiedDemoRate - a.qualifiedDemoRate,
+  );
+  const observedLeader = rankedMetrics[0];
+  const challenger = result.metrics.find(
+    (metric) => metric.conceptId !== result.design.baselineId,
+  );
+  const practicalLiftPass =
+    result.design.mode === "pairwise"
+      ? Boolean(
+          challenger &&
+            (challenger.probabilityOfPracticalLift >=
+              policy.minimumProbabilityOfPracticalLift ||
+              challenger.probabilityBaselineHasPracticalLift >=
+                policy.minimumProbabilityOfPracticalLift),
+        )
+      : observedLeader.conceptId === result.design.baselineId
+        ? rankedMetrics[1].probabilityBaselineHasPracticalLift >=
+          policy.minimumProbabilityOfPracticalLift
+        : observedLeader.probabilityOfPracticalLift >=
+          policy.minimumProbabilityOfPracticalLift;
+  const probabilityBestPass =
+    observedLeader.probabilityBest >= policy.minimumProbabilityBest;
+  const volumePass = result.metrics.every(
+    (metric) =>
+      metric.qualifiedDemos >= policy.minimumQualifiedDemosPerArm,
+  );
 
   return (
     <div className={`results-panel ${compact ? "is-compact" : ""}`}>
@@ -52,8 +96,8 @@ export function ResultsPanel({
           </strong>
           <p>
             {winner
-              ? "Evidence threshold met. Use this concept as the incumbent for generation."
-              : "The leading concept has not cleared every probability, interval, and volume threshold."}
+              ? "The complete volume, probability, and practical-lift policy is satisfied."
+              : noDecisionReason(result)}
           </p>
         </div>
         {winner && (
@@ -77,7 +121,7 @@ export function ResultsPanel({
           <div className="card-heading">
             <div>
               <span>Primary outcome</span>
-              <strong>Qualified-demo rate</strong>
+              <strong>Qualified meeting conversion rate</strong>
             </div>
             <span className="synthetic-pill">
               <Info weight="fill" />
@@ -107,7 +151,10 @@ export function ResultsPanel({
                     border: "1px solid #eee4e8",
                     boxShadow: "0 12px 36px rgba(15,23,42,.08)",
                   }}
-                  formatter={(value) => [`${Number(value).toFixed(2)}%`, "Qualified demos"]}
+                  formatter={(value) => [
+                    `${Number(value).toFixed(2)}%`,
+                    "Qualified meetings",
+                  ]}
                 />
                 <Bar dataKey="ratePct" radius={[8, 8, 2, 2]}>
                   {rows.map((entry) => (
@@ -128,15 +175,45 @@ export function ResultsPanel({
             <TrendUp weight="duotone" />
           </div>
           {[
-            ["≥90%", "Probability vs. control"],
-            ["≥80%", "Probability of being best"],
-            [">0", "95% uplift interval"],
-            ["≥20", "Qualified demos"],
-          ].map(([value, label]) => (
-            <div className="threshold-row" key={label}>
-              <strong>{value}</strong>
-              <span>{label}</span>
-              <CheckCircle weight="fill" />
+            {
+              value:
+              `≥${percent(policy.minimumProbabilityOfPracticalLift, 0)}`,
+              label: `P(lift ≥ ${percent(policy.minimumPracticalLift, 2)} vs. ${baseline.name})`,
+              passes: practicalLiftPass,
+            },
+            {
+              value:
+              `≥${percent(policy.minimumProbabilityBest, 0)}`,
+              label: result.design.mode === "multi_arm"
+                ? "Probability of being best"
+                : "Discovery-only P(best) threshold",
+              passes:
+                result.design.mode === "multi_arm"
+                  ? probabilityBestPass
+                  : null,
+            },
+            {
+              value:
+              `≥${policy.minimumQualifiedDemosPerArm}/arm`,
+              label: "Qualified meetings in every arm",
+              passes: volumePass,
+            },
+            {
+              value: result.sampleRatioMismatch ? "Fail" : "Pass",
+              label: "Blocked-allocation integrity",
+              passes: !result.sampleRatioMismatch,
+            },
+          ].map((item) => (
+            <div className="threshold-row" key={item.label}>
+              <strong>{item.value}</strong>
+              <span>{item.label}</span>
+              {item.passes === null ? (
+                <Info weight="fill" />
+              ) : item.passes ? (
+                <CheckCircle weight="fill" />
+              ) : (
+                <WarningCircle weight="fill" />
+              )}
             </div>
           ))}
           <p>
@@ -152,12 +229,12 @@ export function ResultsPanel({
             <thead>
               <tr>
                 <th>Concept</th>
-                <th>Qualified demos</th>
-                <th>Demo rate</th>
-                <th>95% credible interval</th>
+                <th>Qualified meetings</th>
+                <th>Meeting rate</th>
+                <th>Lead quality</th>
+                <th>P(practical lift)</th>
+                <th>95% uplift interval</th>
                 <th>P(best)</th>
-                <th>Deep scroll</th>
-                <th>CTA rate</th>
               </tr>
             </thead>
             <tbody>
@@ -172,16 +249,53 @@ export function ResultsPanel({
                   </td>
                   <td>{row.qualifiedDemos}</td>
                   <td>{percent(row.qualifiedDemoRate, 2)}</td>
+                  <td>{percent(row.qualificationRate, 0)}</td>
                   <td>
-                    {percent(row.credibleLow, 2)}–{percent(row.credibleHigh, 2)}
+                    {row.conceptId === result.design.baselineId
+                      ? "Baseline"
+                      : percent(row.probabilityOfPracticalLift, 0)}
+                  </td>
+                  <td>
+                    {row.conceptId === result.design.baselineId
+                      ? "—"
+                      : `${percent(row.upliftLow, 2)}–${percent(row.upliftHigh, 2)}`}
                   </td>
                   <td>{percent(row.probabilityBest, 0)}</td>
-                  <td>{percent(row.deepScrollRate, 0)}</td>
-                  <td>{percent(row.ctaRate, 0)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!compact && (
+        <div className="guardrail-readout">
+          <div>
+            <span>Quality diagnostics · {conceptById[decisionMetric.conceptId].name}</span>
+            <strong>Primary outcome with funnel and device context</strong>
+          </div>
+          <dl>
+            <div>
+              <dt>Lead qualification</dt>
+              <dd>{percent(decisionMetric.qualificationRate, 0)}</dd>
+            </div>
+            <div>
+              <dt>Unqualified meetings</dt>
+              <dd>{percent(decisionMetric.unqualifiedDemoShare, 0)}</dd>
+            </div>
+            <div>
+              <dt>Mobile meeting rate</dt>
+              <dd>{percent(decisionMetric.mobileQualifiedDemoRate, 2)}</dd>
+            </div>
+            <div>
+              <dt>Desktop meeting rate</dt>
+              <dd>{percent(decisionMetric.desktopQualifiedDemoRate, 2)}</dd>
+            </div>
+          </dl>
+          <p>
+            These diagnostics expose lead-quality or device regressions; they
+            do not secretly override the declared winner policy.
+          </p>
         </div>
       )}
     </div>

@@ -7,16 +7,19 @@ import {
   Sparkle,
 } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
-import { conceptById, evolvedConcept } from "../data/concepts";
-import { lineage } from "../lib/evolution";
+import { conceptById } from "../data/concepts";
+import type { GeneratedChallenger } from "../lib/evolution";
 import { LandingConcept } from "./LandingConcept";
 import type { Concept } from "../types";
 
 export function EvolutionStage({
+  generation,
   onOpen,
 }: {
+  generation: GeneratedChallenger;
   onOpen: (concept: Concept) => void;
 }) {
+  const { concept, lineage } = generation;
   return (
     <div className="stage-content evolution-stage">
       <div className="stage-heading">
@@ -84,11 +87,11 @@ export function EvolutionStage({
               <strong>Variant F · The adoption plan</strong>
             </span>
           </div>
-          <LandingConcept concept={evolvedConcept} compact />
+          <LandingConcept concept={concept} compact />
           <button
             className="challenger-preview-button"
             type="button"
-            onClick={() => onOpen(evolvedConcept)}
+            onClick={() => onOpen(concept)}
           >
             Open interactive challenger
             <ArrowUpRight weight="bold" />

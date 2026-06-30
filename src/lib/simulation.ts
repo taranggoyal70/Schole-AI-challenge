@@ -1,7 +1,9 @@
-import { concepts, evolvedConcept } from "../data/concepts";
+import { concepts } from "../data/concepts";
 import type {
   Concept,
   ConceptId,
+  DecisionPolicy,
+  ExperimentDesign,
   ExperimentResult,
   PainPriority,
   PersonaId,
@@ -19,6 +21,29 @@ export const defaultConfig: SimulatorConfig = {
   roiPriority: 0.48,
   trustPriority: 0.23,
   mobileShare: 0.34,
+};
+
+export const defaultDecisionPolicy: DecisionPolicy = {
+  minimumQualifiedDemosPerArm: 20,
+  minimumPracticalLift: 0.005,
+  minimumProbabilityOfPracticalLift: 0.95,
+  minimumProbabilityBest: 0.8,
+};
+
+export interface HoldoutShift {
+  seedOffset: number;
+  decisionMakerShare: number;
+  roiPriority: number;
+  trustPriority: number;
+  mobileShare: number;
+}
+
+export const defaultHoldoutShift: HoldoutShift = {
+  seedOffset: 9137,
+  decisionMakerShare: 0.1,
+  roiPriority: -0.13,
+  trustPriority: 0.18,
+  mobileShare: 0.14,
 };
 
 const personaLabels: Record<PersonaId, string> = {
@@ -126,7 +151,11 @@ function createVisitor(
     random,
   );
 
-  const qualified = qualifiedPersonas.includes(persona);
+  const isDecisionMaker = qualifiedPersonas.includes(persona);
+  const companyFit = clamp(
+    (isDecisionMaker ? 0.68 : 0.28) + (random() - 0.5) * 0.5,
+  );
+  const qualified = isDecisionMaker && companyFit >= 0.5;
   const intentBase: Record<PersonaId, number> = {
     ld_leader: 0.68,
     hr_exec: 0.65,
@@ -140,7 +169,7 @@ function createVisitor(
     persona,
     personaLabel: personaLabels[persona],
     qualified,
-    companyFit: clamp((qualified ? 0.68 : 0.28) + (random() - 0.5) * 0.5),
+    companyFit,
     intent: clamp(intentBase[persona] + (random() - 0.5) * 0.56),
     attention: clamp(0.58 + (random() - 0.5) * 0.72),
     pain,
@@ -158,13 +187,24 @@ function painFit(conceptId: ConceptId, pain: PainPriority): number {
   return -0.08;
 }
 
+function modelSource(
+  concept: Concept,
+  gene: keyof Concept["genes"],
+): ConceptId {
+  return concept.modelProfile?.[gene] ?? concept.id;
+}
+
 function simulateSession(
   concept: Concept,
   visitor: Visitor,
   random: Random,
 ): SessionOutcome {
-  const baseFit = fitMatrix[concept.id][visitor.persona];
-  const fit = clamp(baseFit + painFit(concept.id, visitor.pain));
+  const promiseSource = modelSource(concept, "promise");
+  const proofSource = modelSource(concept, "proof");
+  const interactionSource = modelSource(concept, "interaction");
+  const ctaSource = modelSource(concept, "cta");
+  const baseFit = fitMatrix[promiseSource][visitor.persona];
+  const fit = clamp(baseFit + painFit(promiseSource, visitor.pain));
   const mobileFriction = visitor.device === "mobile" ? 0.12 : 0;
 
   const bounceProbability = sigmoid(
@@ -184,9 +224,9 @@ function simulateSession(
       );
 
   const proofAffinity =
-    concept.id === "trust" || concept.id === "evolved"
+    proofSource === "trust" || proofSource === "evolved"
       ? 0.55
-      : concept.id === "control"
+      : proofSource === "control"
         ? 0.16
         : 0.28;
   const proofEngaged =
@@ -213,7 +253,7 @@ function simulateSession(
     random() <
       sigmoid(
         -1.35 +
-          interactionStrength[concept.id] +
+          interactionStrength[interactionSource] +
           0.95 * visitor.intent +
           0.85 * fit +
           0.28 * visitor.attention,
@@ -236,7 +276,7 @@ function simulateSession(
           1.45 * fit +
           0.42 * Number(scrollDepth > 0.7) +
           0.55 * Number(interactionCompleted) +
-          ctaDirectness[concept.id],
+          ctaDirectness[ctaSource],
       );
 
   const demoCompleted =
@@ -248,7 +288,7 @@ function simulateSession(
           1.18 * visitor.companyFit +
           0.5 * Number(proofEngaged) +
           0.38 * Number(interactionCompleted) +
-          ctaDirectness[concept.id] -
+          ctaDirectness[ctaSource] -
           (visitor.device === "mobile" ? 0.16 : 0),
       );
 
@@ -282,24 +322,60 @@ function percentile(values: number[], p: number): number {
   return sorted[index];
 }
 
+export interface RunExperimentOptions {
+  mode?: ExperimentDesign["mode"];
+  baselineId?: ConceptId;
+  policy?: DecisionPolicy;
+}
+
 function summarize(
   conceptIds: ConceptId[],
   sessions: SessionOutcome[],
   seed: number,
+  design: ExperimentDesign,
 ): VariantMetrics[] {
   const base = conceptIds.map((conceptId) => {
     const rows = sessions.filter((session) => session.conceptId === conceptId);
+    const mobileRows = rows.filter(
+      (session) => session.visitor.device === "mobile",
+    );
+    const desktopRows = rows.filter(
+      (session) => session.visitor.device === "desktop",
+    );
+    const demoCompletions = rows.filter((row) => row.demoCompleted).length;
     const qualifiedDemos = rows.filter((row) => row.qualifiedDemo).length;
+    const proofEngagements = rows.filter((row) => row.proofEngaged);
     return {
       conceptId,
       sessions: rows.length,
+      demoCompletions,
       qualifiedDemos,
       qualifiedDemoRate: qualifiedDemos / rows.length,
+      demoCompletionRate: demoCompletions / rows.length,
+      qualificationRate: demoCompletions
+        ? qualifiedDemos / demoCompletions
+        : 0,
+      unqualifiedDemoShare: demoCompletions
+        ? (demoCompletions - qualifiedDemos) / demoCompletions
+        : 0,
+      mobileQualifiedDemoRate: mobileRows.length
+        ? mobileRows.filter((row) => row.qualifiedDemo).length /
+          mobileRows.length
+        : 0,
+      desktopQualifiedDemoRate: desktopRows.length
+        ? desktopRows.filter((row) => row.qualifiedDemo).length /
+          desktopRows.length
+        : 0,
       ctaRate: rows.filter((row) => row.ctaClicked).length / rows.length,
       deepScrollRate:
         rows.filter((row) => row.scrollDepth >= 0.75).length / rows.length,
       interactionRate:
         rows.filter((row) => row.interactionCompleted).length / rows.length,
+      proofEngagementRate: proofEngagements.length / rows.length,
+      proofToCtaRate: proofEngagements.length
+        ? proofEngagements.filter((row) => row.ctaClicked).length /
+          proofEngagements.length
+        : 0,
       averageDwell:
         rows.reduce((sum, row) => sum + row.dwellSeconds, 0) / rows.length,
     };
@@ -326,18 +402,25 @@ function summarize(
     bestCounts[bestIndex] += 1;
   }
 
-  const controlIndex = conceptIds.indexOf("control");
+  const baselineIndex = conceptIds.indexOf(design.baselineId);
   return base.map((metric, index) => {
-    const controlSamples =
-      controlIndex >= 0 ? samples[controlIndex] : samples[Math.max(0, index - 1)];
+    const baselineSamples = samples[baselineIndex];
     const differences = samples[index].map(
-      (sample, draw) => sample - controlSamples[draw],
+      (sample, draw) => sample - baselineSamples[draw],
     );
     return {
       ...metric,
       probabilityBest: bestCounts[index] / draws,
-      probabilityBeatControl:
+      probabilityBeatBaseline:
         differences.filter((difference) => difference > 0).length / draws,
+      probabilityOfPracticalLift:
+        differences.filter(
+          (difference) => difference >= design.policy.minimumPracticalLift,
+        ).length / draws,
+      probabilityBaselineHasPracticalLift:
+        differences.filter(
+          (difference) => difference <= -design.policy.minimumPracticalLift,
+        ).length / draws,
       credibleLow: percentile(samples[index], 0.025),
       credibleHigh: percentile(samples[index], 0.975),
       upliftLow: percentile(differences, 0.025),
@@ -346,63 +429,156 @@ function summarize(
   });
 }
 
+function shuffled<T>(values: T[], random: Random): T[] {
+  const result = [...values];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
 export function runExperiment(
   config: SimulatorConfig = defaultConfig,
   variants: Concept[] = concepts,
+  options: RunExperimentOptions = {},
 ): ExperimentResult {
-  const sessions: SessionOutcome[] = [];
+  const baselineId = options.baselineId ?? variants[0]?.id;
+  if (!baselineId || !variants.some((variant) => variant.id === baselineId)) {
+    throw new Error("Experiment baseline must be one of the tested variants.");
+  }
+  const design: ExperimentDesign = {
+    mode: options.mode ?? (variants.length === 2 ? "pairwise" : "multi_arm"),
+    baselineId,
+    policy: options.policy ?? defaultDecisionPolicy,
+  };
+  if (design.mode === "pairwise" && variants.length !== 2) {
+    throw new Error("Pairwise experiments require exactly two variants.");
+  }
 
-  variants.forEach((concept, conceptIndex) => {
-    const random = mulberry32(config.seed + conceptIndex * 104729);
-    for (let index = 0; index < config.sessionsPerVariant; index += 1) {
-      const visitor = createVisitor(index, config, random);
-      sessions.push(simulateSession(concept, visitor, random));
-    }
-  });
+  const assignments = shuffled(
+    variants.flatMap((variant) =>
+      Array.from({ length: config.sessionsPerVariant }, () => variant),
+    ),
+    mulberry32(config.seed + 271828),
+  );
+  const visitorRandom = mulberry32(config.seed + 314159);
+  const outcomeRandom = mulberry32(config.seed + 161803);
+  const sessions = assignments.map((concept, index) =>
+    simulateSession(
+      concept,
+      createVisitor(index, config, visitorRandom),
+      outcomeRandom,
+    ),
+  );
 
   const metrics = summarize(
     variants.map((concept) => concept.id),
     sessions,
     config.seed,
+    design,
   );
-  const best = [...metrics].sort(
+  const ranked = [...metrics].sort(
     (a, b) => b.qualifiedDemoRate - a.qualifiedDemoRate,
-  )[0];
+  );
+  const volumeReady = metrics.every(
+    (metric) =>
+      metric.qualifiedDemos >=
+      design.policy.minimumQualifiedDemosPerArm,
+  );
 
-  let winnerId: ConceptId | null = best.conceptId;
-  let decision: ExperimentResult["decision"] = "winner";
+  let winnerId: ConceptId | null = null;
+  let decision: ExperimentResult["decision"] = "no_decision_practical";
 
-  if (best.qualifiedDemos < 20) {
-    winnerId = null;
+  if (!volumeReady) {
     decision = "no_decision_volume";
-  } else if (
-    best.probabilityBest < 0.8 ||
-    (best.conceptId !== "control" && best.probabilityBeatControl < 0.9)
-  ) {
-    winnerId = null;
-    decision = "no_decision_probability";
-  } else if (best.conceptId !== "control" && best.upliftLow <= 0) {
-    winnerId = null;
-    decision = "no_decision_interval";
+  } else if (design.mode === "pairwise") {
+    const challenger = metrics.find(
+      (metric) => metric.conceptId !== design.baselineId,
+    )!;
+    if (
+      challenger.probabilityOfPracticalLift >=
+      design.policy.minimumProbabilityOfPracticalLift
+    ) {
+      winnerId = challenger.conceptId;
+      decision = "winner";
+    } else if (
+      challenger.probabilityBaselineHasPracticalLift >=
+      design.policy.minimumProbabilityOfPracticalLift
+    ) {
+      winnerId = design.baselineId;
+      decision = "winner";
+    }
+  } else {
+    const best = ranked[0];
+    if (best.probabilityBest < design.policy.minimumProbabilityBest) {
+      decision = "no_decision_probability";
+    } else if (best.conceptId === design.baselineId) {
+      const runnerUp = ranked[1];
+      if (
+        runnerUp.probabilityBaselineHasPracticalLift >=
+        design.policy.minimumProbabilityOfPracticalLift
+      ) {
+        winnerId = best.conceptId;
+        decision = "winner";
+      }
+    } else if (
+      best.probabilityOfPracticalLift >=
+      design.policy.minimumProbabilityOfPracticalLift
+    ) {
+      winnerId = best.conceptId;
+      decision = "winner";
+    }
   }
 
-  return { config, metrics, sessions, winnerId, decision };
+  const allocation = Object.fromEntries(
+    variants.map((variant) => [
+      variant.id,
+      sessions.filter((session) => session.conceptId === variant.id).length,
+    ]),
+  ) as Partial<Record<ConceptId, number>>;
+  const expectedAllocation = sessions.length / variants.length;
+  const sampleRatioMismatch = Object.values(allocation).some(
+    (count) => count !== expectedAllocation,
+  );
+
+  return {
+    config,
+    design,
+    metrics,
+    sessions,
+    winnerId,
+    allocation,
+    sampleRatioMismatch,
+    decision,
+  };
 }
 
 export function runHoldout(
-  config: SimulatorConfig = defaultConfig,
+  config: SimulatorConfig,
+  incumbent: Concept,
+  challenger: Concept,
+  policy: DecisionPolicy = defaultDecisionPolicy,
+  shift: HoldoutShift = defaultHoldoutShift,
 ): ExperimentResult {
   const holdoutConfig: SimulatorConfig = {
     ...config,
-    seed: config.seed + 9137,
-    decisionMakerShare: Math.min(0.9, config.decisionMakerShare + 0.1),
-    roiPriority: Math.max(0.25, config.roiPriority - 0.13),
-    trustPriority: Math.min(0.52, config.trustPriority + 0.18),
-    mobileShare: Math.min(0.65, config.mobileShare + 0.14),
+    seed: config.seed + shift.seedOffset,
+    decisionMakerShare: Math.min(
+      0.9,
+      config.decisionMakerShare + shift.decisionMakerShare,
+    ),
+    roiPriority: Math.max(0.25, config.roiPriority + shift.roiPriority),
+    trustPriority: Math.min(
+      0.52,
+      config.trustPriority + shift.trustPriority,
+    ),
+    mobileShare: Math.min(0.65, config.mobileShare + shift.mobileShare),
   };
 
-  return runExperiment(holdoutConfig, [
-    concepts.find((concept) => concept.id === "roi")!,
-    evolvedConcept,
-  ]);
+  return runExperiment(holdoutConfig, [incumbent, challenger], {
+    mode: "pairwise",
+    baselineId: incumbent.id,
+    policy,
+  });
 }

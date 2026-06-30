@@ -1,10 +1,16 @@
-import { concepts } from "../data/concepts";
+import { conceptById, concepts } from "../data/concepts";
+import { generateChallenger } from "./evolution";
 import type {
   ConceptId,
+  DecisionPolicy,
   ExperimentResult,
   SimulatorConfig,
 } from "../types";
-import { runExperiment, runHoldout } from "./simulation";
+import {
+  defaultDecisionPolicy,
+  runExperiment,
+  runHoldout,
+} from "./simulation";
 
 export const ROBUSTNESS_COHORT_COUNT = 50;
 export const ROBUSTNESS_SEED_STRIDE = 137;
@@ -12,7 +18,10 @@ export const ROBUSTNESS_SEED_STRIDE = 137;
 export type DiscoveryOutcomeKey =
   | Exclude<ConceptId, "evolved">
   | "no_decision";
-export type HoldoutOutcomeKey = "evolved" | "roi" | "no_decision";
+export type HoldoutOutcomeKey =
+  | "challenger"
+  | "incumbent"
+  | "no_decision";
 
 export interface RobustnessCohort {
   index: number;
@@ -25,6 +34,8 @@ export interface RobustnessCohort {
     leaderProbabilityBest: number;
   };
   holdout: {
+    incumbentId: ConceptId;
+    challengerId: ConceptId;
     winnerId: ConceptId | null;
     decision: ExperimentResult["decision"];
     incumbentRate: number;
@@ -44,7 +55,8 @@ export interface RobustnessStudy {
   cohorts: RobustnessCohort[];
   discoveryCounts: Record<DiscoveryOutcomeKey, number>;
   holdoutCounts: Record<HoldoutOutcomeKey, number>;
-  roiStability: number;
+  incumbentId: Exclude<ConceptId, "evolved">;
+  incumbentStability: number;
   discoveryNoDecisionRate: number;
   challengerHoldoutRate: number;
   averageChallengerUplift: number;
@@ -52,7 +64,10 @@ export interface RobustnessStudy {
   holdoutCounterexample: RobustnessCohort | null;
 }
 
-export function robustnessConfigSignature(config: SimulatorConfig): string {
+export function robustnessConfigSignature(
+  config: SimulatorConfig,
+  policy: DecisionPolicy = defaultDecisionPolicy,
+): string {
   return [
     config.seed,
     config.sessionsPerVariant,
@@ -60,27 +75,45 @@ export function robustnessConfigSignature(config: SimulatorConfig): string {
     config.roiPriority,
     config.trustPriority,
     config.mobileShare,
+    policy.minimumQualifiedDemosPerArm,
+    policy.minimumPracticalLift,
+    policy.minimumProbabilityOfPracticalLift,
+    policy.minimumProbabilityBest,
   ].join(":");
 }
 
 export function runRobustnessCohort(
   baseConfig: SimulatorConfig,
   index: number,
+  policy: DecisionPolicy = defaultDecisionPolicy,
 ): RobustnessCohort {
   const config = {
     ...baseConfig,
     seed: baseConfig.seed + index * ROBUSTNESS_SEED_STRIDE,
   };
-  const discovery = runExperiment(config, concepts);
-  const holdout = runHoldout(config);
+  const discovery = runExperiment(config, concepts, {
+    mode: "multi_arm",
+    baselineId: concepts[0].id,
+    policy,
+  });
+  const incumbent = discovery.winnerId
+    ? conceptById[discovery.winnerId]
+    : conceptById[discovery.design.baselineId];
+  const challenger = generateChallenger(discovery).concept;
+  const holdout = runHoldout(
+    config,
+    incumbent,
+    challenger,
+    discovery.design.policy,
+  );
   const discoveryLeader = [...discovery.metrics].sort(
     (a, b) => b.qualifiedDemoRate - a.qualifiedDemoRate,
   )[0];
-  const incumbent = holdout.metrics.find(
-    (metric) => metric.conceptId === "roi",
+  const incumbentMetric = holdout.metrics.find(
+    (metric) => metric.conceptId === holdout.design.baselineId,
   )!;
-  const challenger = holdout.metrics.find(
-    (metric) => metric.conceptId === "evolved",
+  const challengerMetric = holdout.metrics.find(
+    (metric) => metric.conceptId !== holdout.design.baselineId,
   )!;
 
   return {
@@ -94,13 +127,15 @@ export function runRobustnessCohort(
       leaderProbabilityBest: discoveryLeader.probabilityBest,
     },
     holdout: {
+      incumbentId: incumbentMetric.conceptId,
+      challengerId: challengerMetric.conceptId,
       winnerId: holdout.winnerId,
       decision: holdout.decision,
-      incumbentRate: incumbent.qualifiedDemoRate,
-      challengerRate: challenger.qualifiedDemoRate,
-      challengerProbabilityBest: challenger.probabilityBest,
-      challengerUpliftLow: challenger.upliftLow,
-      challengerUpliftHigh: challenger.upliftHigh,
+      incumbentRate: incumbentMetric.qualifiedDemoRate,
+      challengerRate: challengerMetric.qualifiedDemoRate,
+      challengerProbabilityBest: challengerMetric.probabilityBest,
+      challengerUpliftLow: challengerMetric.upliftLow,
+      challengerUpliftHigh: challengerMetric.upliftHigh,
     },
   };
 }
@@ -108,6 +143,7 @@ export function runRobustnessCohort(
 export function summarizeRobustnessStudy(
   baseConfig: SimulatorConfig,
   cohorts: RobustnessCohort[],
+  policy: DecisionPolicy = defaultDecisionPolicy,
 ): RobustnessStudy {
   const discoveryCounts: RobustnessStudy["discoveryCounts"] = {
     control: 0,
@@ -118,8 +154,8 @@ export function summarizeRobustnessStudy(
     no_decision: 0,
   };
   const holdoutCounts: RobustnessStudy["holdoutCounts"] = {
-    evolved: 0,
-    roi: 0,
+    challenger: 0,
+    incumbent: 0,
     no_decision: 0,
   };
 
@@ -128,12 +164,19 @@ export function summarizeRobustnessStudy(
       "no_decision") as DiscoveryOutcomeKey;
     discoveryCounts[discoveryKey] += 1;
 
-    const holdoutKey = (cohort.holdout.winnerId ??
-      "no_decision") as HoldoutOutcomeKey;
+    const holdoutKey: HoldoutOutcomeKey =
+      cohort.holdout.winnerId === null
+        ? "no_decision"
+        : cohort.holdout.winnerId === cohort.holdout.challengerId
+          ? "challenger"
+          : "incumbent";
     holdoutCounts[holdoutKey] += 1;
   });
 
   const cohortCount = cohorts.length;
+  const incumbentId = (cohorts[0]?.discovery.winnerId ??
+    cohorts[0]?.discovery.leaderId ??
+    concepts[0].id) as Exclude<ConceptId, "evolved">;
   const totalChallengerUplift = cohorts.reduce(
     (total, cohort) =>
       total +
@@ -145,35 +188,44 @@ export function summarizeRobustnessStudy(
     cohortCount,
     seedStart: cohorts[0]?.seed ?? baseConfig.seed,
     seedEnd: cohorts.at(-1)?.seed ?? baseConfig.seed,
-    configSignature: robustnessConfigSignature(baseConfig),
+    configSignature: robustnessConfigSignature(baseConfig, policy),
     totalSessions:
       cohortCount * baseConfig.sessionsPerVariant * (concepts.length + 2),
     cohorts,
     discoveryCounts,
     holdoutCounts,
-    roiStability: cohortCount ? discoveryCounts.roi / cohortCount : 0,
+    incumbentId,
+    incumbentStability: cohortCount
+      ? discoveryCounts[incumbentId] / cohortCount
+      : 0,
     discoveryNoDecisionRate: cohortCount
       ? discoveryCounts.no_decision / cohortCount
       : 0,
     challengerHoldoutRate: cohortCount
-      ? holdoutCounts.evolved / cohortCount
+      ? holdoutCounts.challenger / cohortCount
       : 0,
     averageChallengerUplift: cohortCount
       ? totalChallengerUplift / cohortCount
       : 0,
     discoveryCounterexample:
-      cohorts.find((cohort) => cohort.discovery.winnerId !== "roi") ?? null,
+      cohorts.find(
+        (cohort) => cohort.discovery.winnerId !== incumbentId,
+      ) ?? null,
     holdoutCounterexample:
-      cohorts.find((cohort) => cohort.holdout.winnerId !== "evolved") ?? null,
+      cohorts.find(
+        (cohort) =>
+          cohort.holdout.winnerId !== cohort.holdout.challengerId,
+      ) ?? null,
   };
 }
 
 export function runRobustnessStudy(
   baseConfig: SimulatorConfig,
   cohortCount = ROBUSTNESS_COHORT_COUNT,
+  policy: DecisionPolicy = defaultDecisionPolicy,
 ): RobustnessStudy {
   const cohorts = Array.from({ length: cohortCount }, (_, index) =>
-    runRobustnessCohort(baseConfig, index),
+    runRobustnessCohort(baseConfig, index, policy),
   );
-  return summarizeRobustnessStudy(baseConfig, cohorts);
+  return summarizeRobustnessStudy(baseConfig, cohorts, policy);
 }
