@@ -17,7 +17,7 @@ EVOLVE compares five strategically different landing pages, simulates visitor se
 | Generate a new variation | Generation 1 creates Variant F from inherited page genes plus one mutation |
 | Explain what changed and why | Every generated gene shows its source, evidence, and confidence |
 | Learn over time | Discovery → generation → unseen holdout → real-test export |
-| Go beyond the requirements | Same-buyer replay, no-decision state, counterfactual lab, holdout gauntlet, and production experiment plan |
+| Go beyond the requirements | Same-buyer replay, no-decision state, counterfactual lab, 50-cohort robustness study, holdout gauntlet, and production experiment plan |
 
 ## The product decision
 
@@ -93,6 +93,14 @@ The challenger is evaluated on a separate seed and shifted traffic mix:
 - heavier mobile traffic.
 
 No gene was selected using the holdout. Only after the challenger clears that test does EVOLVE generate a production experiment plan for real randomized traffic.
+
+## Robustness observatory
+
+A single seed can accidentally flatter a model. The Experiment Lab can therefore repeat discovery and holdout across 50 independent deterministic cohorts—840,000 synthetic sessions under the baseline assumptions.
+
+The observatory reports incumbent stability, valid no-decision frequency, challenger holdout reliability, and average observed uplift. It also exposes counterexample seeds where discovery or holdout resists the tidy headline result, then lets an operator load that exact seed into the Lab for inspection.
+
+Repeated synthetic cohorts test whether the simulation mechanics are stable. They still do not establish real-market lift.
 
 ## Run locally
 

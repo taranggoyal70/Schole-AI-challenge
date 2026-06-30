@@ -34,6 +34,10 @@
 
 > I then shift the unseen cohort toward skeptical enterprise buyers and heavier mobile traffic. The challenger has to generalize before it earns a real experiment. The final button exports the production hypothesis, allocation, guardrails, instrumentation, and stopping policy.
 
+### Robustness
+
+> One seed can flatter a model, so I stress-test the entire loop across 50 independent cohorts—840,000 synthetic sessions. Variant B remains stable, Variant F usually clears holdout, and the system still surfaces the runs where evidence is inconclusive. You can open those counterexample seeds instead of hiding them.
+
 ### Close
 
 > The core idea is simple: automate the learning loop without automating away judgment. Synthetic behavior helps us test the machinery. Only real randomized traffic can validate the market claim.
