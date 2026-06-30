@@ -5,7 +5,7 @@ import {
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { conceptById } from "../data/concepts";
-import type { ExperimentResult, PersonaId, ConceptId } from "../types";
+import type { ExperimentResult, PersonaId } from "../types";
 
 type InsightTab = "funnel" | "segments" | "sensitivity";
 
@@ -96,6 +96,24 @@ function computeSensitivity(result: ExperimentResult): Array<{
   // by analyzing the existing sessions
   const sessions = result.sessions;
   const conceptIds = result.metrics.map((m) => m.conceptId);
+  const leadingConceptFor = (
+    subset: ExperimentResult["sessions"],
+  ): string => {
+    const leader = conceptIds
+      .map((conceptId) => {
+        const conceptSessions = subset.filter(
+          (session) => session.conceptId === conceptId,
+        );
+        return {
+          conceptId,
+          rate:
+            conceptSessions.filter((session) => session.qualifiedDemo).length /
+            (conceptSessions.length || 1),
+        };
+      })
+      .sort((left, right) => right.rate - left.rate)[0];
+    return conceptById[leader.conceptId].name;
+  };
 
   // Analyze how different visitor traits correlate with conversion
   const traits: Array<{
@@ -122,7 +140,7 @@ function computeSensitivity(result: ExperimentResult): Array<{
   const nonRoiRate = nonRoiSessions.filter((s) => s.qualifiedDemo).length / (nonRoiSessions.length || 1);
   traits.push({
     label: "ROI-priority share",
-    description: "ROI-focused visitors favor Variant B",
+    description: `${leadingConceptFor(roiSessions)} leads ROI-priority visitors`,
     impact: roiRate - nonRoiRate,
   });
 
@@ -133,7 +151,7 @@ function computeSensitivity(result: ExperimentResult): Array<{
   const nonTrustRate = nonTrustSessions.filter((s) => s.qualifiedDemo).length / (nonTrustSessions.length || 1);
   traits.push({
     label: "Research-priority share",
-    description: "Trust-focused visitors favor Variant D",
+    description: `${leadingConceptFor(trustSessions)} leads research-priority visitors`,
     impact: trustRate - nonTrustRate,
   });
 

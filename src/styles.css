@@ -2140,6 +2140,68 @@ button:disabled {
   font-size: 9px;
 }
 
+.guardrail-readout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(460px, 1.7fr);
+  align-items: center;
+  gap: 14px;
+  padding: 13px 15px;
+  border: 1px solid #e5dce1;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: var(--shadow-sm);
+}
+
+.guardrail-readout > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.guardrail-readout span,
+.guardrail-readout dt {
+  color: #927687;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.guardrail-readout strong {
+  font-size: 10px;
+}
+
+.guardrail-readout dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.guardrail-readout dl > div {
+  padding: 8px;
+  border: 1px solid #eee7ea;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.guardrail-readout dt {
+  font-size: 7px;
+}
+
+.guardrail-readout dd {
+  margin: 3px 0 0;
+  color: #4f3544;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.guardrail-readout > p {
+  grid-column: 1 / -1;
+  margin: -4px 0 0;
+  color: #856f7b;
+  font-size: 8px;
+}
+
 .lineage-layout {
   display: grid;
   grid-template-columns: minmax(330px, 0.8fr) 50px minmax(520px, 1.3fr);
@@ -2693,6 +2755,27 @@ button:disabled {
 .lab-slider {
   display: block;
   margin-top: 15px;
+}
+
+.lab-policy-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #eadfe5;
+}
+
+.lab-policy-heading span {
+  color: #9a6f86;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lab-policy-heading strong {
+  font-size: 11px;
 }
 
 .scenario-presets {
@@ -3429,6 +3512,14 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .guardrail-readout {
+    grid-template-columns: 1fr;
+  }
+
+  .guardrail-readout > p {
+    grid-column: 1;
+  }
+
   .lineage-layout {
     grid-template-columns: 1fr;
   }
@@ -3477,6 +3568,10 @@ button:disabled {
 
   .brand-name {
     font-size: 22px;
+  }
+
+  .guardrail-readout dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .step-rail strong {

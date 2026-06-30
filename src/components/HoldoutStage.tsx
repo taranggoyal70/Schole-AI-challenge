@@ -16,27 +16,38 @@ function pct(value: number, digits = 1) {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
+function signedPoints(value: number, digits = 0) {
+  const points = value * 100;
+  return `${points >= 0 ? "+" : ""}${points.toFixed(digits)} pts`;
+}
+
 function exportPlan(
   discovery: ExperimentResult,
   holdout: ExperimentResult,
 ) {
-  const incumbent = discovery.winnerId
-    ? conceptById[discovery.winnerId]
-    : null;
+  const incumbent = conceptById[holdout.design.baselineId];
   const challengerMetric = holdout.metrics.find(
-    (metric) => metric.conceptId === "evolved",
+    (metric) => metric.conceptId !== holdout.design.baselineId,
   );
+  const challenger = challengerMetric
+    ? conceptById[challengerMetric.conceptId]
+    : null;
+  const policy = holdout.design.policy;
   const plan = `# Scholé landing-page follow-up experiment
 
 ## Decision
 
-Test the generated challenger **Variant F: The adoption plan** against ${
+Test the generated challenger **${
+    challenger
+      ? `Variant ${challenger.shortLabel}: ${challenger.name}`
+      : "the generated challenger"
+  }** against ${
     incumbent ? `Variant ${incumbent.shortLabel}: ${incumbent.name}` : "the current incumbent"
   }.
 
 ## Hypothesis
 
-Combining ROI urgency, an adoption diagnostic, and research-backed proof will increase qualified-demo conversion without sacrificing traffic quality.
+Combining the discovered promise, strongest interaction pattern, strongest proof-engagement pattern, and one exploratory CTA will increase qualified-meeting conversion without sacrificing traffic quality.
 
 ## Audience
 
@@ -51,7 +62,7 @@ HR, L&D, and AI transformation leaders at 200–2,000-person organizations that 
 
 ## Primary outcome
 
-Qualified demos / randomized unique visitors.
+Qualified meeting completions / eligible exposed unique visitors.
 
 ## Diagnostics
 
@@ -69,16 +80,17 @@ Qualified demos / randomized unique visitors.
 
 ## Decision policy
 
-- ≥90% probability of beating incumbent
-- ≥80% probability of being best
-- Positive 95% credible interval for uplift
-- ≥20 qualified demos per arm
+- ≥${pct(policy.minimumProbabilityOfPracticalLift, 0)} probability of at least ${pct(policy.minimumPracticalLift, 2)} absolute lift
+- ≥${pct(policy.minimumProbabilityBest, 0)} probability of being best during multi-arm discovery
+- ≥${policy.minimumQualifiedDemosPerArm} qualified meetings in every arm
+- Apply the same practical-lift rule when deciding that the incumbent retains its seat
 - Otherwise: no decision, continue collecting
 
 ## Synthetic holdout result
 
-- Challenger qualified-demo rate: ${challengerMetric ? pct(challengerMetric.qualifiedDemoRate, 2) : "n/a"}
-- Probability best: ${challengerMetric ? pct(challengerMetric.probabilityBest, 0) : "n/a"}
+- Decision: ${holdout.winnerId ? `${conceptById[holdout.winnerId].name} wins` : "No decision"}
+- Challenger qualified-meeting rate: ${challengerMetric ? pct(challengerMetric.qualifiedDemoRate, 2) : "n/a"}
+- Probability of at least ${pct(policy.minimumPracticalLift, 2)} absolute lift: ${challengerMetric ? pct(challengerMetric.probabilityOfPracticalLift, 0) : "n/a"}
 
 > Synthetic results validate the system mechanics, not real-market lift.
 `;
@@ -100,16 +112,34 @@ export function HoldoutStage({
   holdout: ExperimentResult;
 }) {
   const [exported, setExported] = useState(false);
-  const incumbent = holdout.metrics.find((metric) => metric.conceptId === "roi")!;
+  const incumbent = holdout.metrics.find(
+    (metric) => metric.conceptId === holdout.design.baselineId,
+  )!;
   const challenger = holdout.metrics.find(
-    (metric) => metric.conceptId === "evolved",
+    (metric) => metric.conceptId !== holdout.design.baselineId,
   )!;
   const maxRate = Math.max(
     incumbent.qualifiedDemoRate,
     challenger.qualifiedDemoRate,
   );
-  const challengerPassed = holdout.winnerId === "evolved";
-  const incumbentWon = holdout.winnerId === "roi";
+  const challengerPassed = holdout.winnerId === challenger.conceptId;
+  const incumbentWon = holdout.winnerId === incumbent.conceptId;
+  const cohortShifts = [
+    {
+      label: "Decision makers",
+      value:
+        holdout.config.decisionMakerShare -
+        discovery.config.decisionMakerShare,
+    },
+    {
+      label: "Research priority",
+      value: holdout.config.trustPriority - discovery.config.trustPriority,
+    },
+    {
+      label: "Mobile traffic",
+      value: holdout.config.mobileShare - discovery.config.mobileShare,
+    },
+  ];
 
   return (
     <div className="stage-content holdout-stage">
@@ -129,18 +159,12 @@ export function HoldoutStage({
       <div className="holdout-layout">
         <div className="holdout-card">
           <div className="holdout-shift">
-            <span>
-              Decision makers
-              <strong>+10 pts</strong>
-            </span>
-            <span>
-              Research priority
-              <strong>+18 pts</strong>
-            </span>
-            <span>
-              Mobile traffic
-              <strong>+14 pts</strong>
-            </span>
+            {cohortShifts.map((shift) => (
+              <span key={shift.label}>
+                {shift.label}
+                <strong>{signedPoints(shift.value)}</strong>
+              </span>
+            ))}
           </div>
 
           <div className="duel">
@@ -156,7 +180,9 @@ export function HoldoutStage({
                     <div>
                       <strong>{concept.name}</strong>
                       <small>
-                        {metric.conceptId === "roi" ? "Incumbent" : "Challenger"}
+                        {metric.conceptId === holdout.design.baselineId
+                          ? "Incumbent"
+                          : "Challenger"}
                       </small>
                     </div>
                   </div>
@@ -191,9 +217,10 @@ export function HoldoutStage({
                     : "Holdout returns no decision"}
               </span>
               <strong>
-                {pct(challenger.probabilityBest, 0)} probability best ·{" "}
-                {pct(challenger.upliftLow, 2)} to {pct(challenger.upliftHigh, 2)}{" "}
-                uplift interval
+                {pct(challenger.probabilityOfPracticalLift, 0)} probability of
+                practical lift ·{" "}
+                {signedPoints(challenger.upliftLow, 2)} to{" "}
+                {signedPoints(challenger.upliftHigh, 2)} uplift interval
               </strong>
             </div>
           </div>
