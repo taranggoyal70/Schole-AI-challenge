@@ -5,6 +5,7 @@ import {
 } from "@phosphor-icons/react";
 import type { SimulatorConfig } from "../types";
 import type { ExperimentResult } from "../types";
+import { RobustnessObservatory } from "./RobustnessObservatory";
 import { ResultsPanel } from "./ResultsPanel";
 
 interface SliderDefinition {
@@ -209,6 +210,11 @@ export function LabPanel({
 
         <ResultsPanel result={result} compact />
       </div>
+
+      <RobustnessObservatory
+        config={config}
+        onInspectSeed={(seed) => onConfig({ ...config, seed })}
+      />
     </main>
   );
 }
