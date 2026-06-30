@@ -14,7 +14,7 @@
 
 ### Same visitor, five worlds
 
-> This replay makes the treatments legible using one synthetic buyer. It is illustrative, not evidence. The aggregate experiment uses separately randomized sessions.
+> This replay makes the treatments legible using one synthetic buyer. It is illustrative, not evidence. The aggregate experiment creates one unique synthetic population, then block-randomizes each visitor to exactly one arm.
 
 ### Synthetic traffic
 
@@ -22,11 +22,11 @@
 
 ### Evidence
 
-> Qualified demos select the winner. Scroll, dwell, and clicks only explain why. Variant B clears four pre-declared thresholds: probability versus control, probability of being best, positive uplift interval, and minimum qualified-demo volume. If those conditions fail, the system says no winner.
+> Qualified meeting completions select the winner. Scroll, dwell, and clicks only explain why. Variant B clears a pre-declared contract: at least 95% probability of a 0.50-point practical lift over the declared baseline, at least 80% probability best in discovery, and 20 qualified outcomes in every arm. If those conditions fail, the system says no winner.
 
 ### Evolution
 
-> The generated challenger has visible lineage. It inherits ROI urgency from B, the diagnostic interaction from E, and research proof from D. It also adds one exploration mutation: a concrete 20-minute adoption plan instead of a generic demo.
+> The generated challenger has computed lineage. The primary outcome selects its promise and structure, while the strongest observed interaction and proof-engagement signals select those genes. The current default composes ROI positioning with the diagnostic interaction, then adds one exploration mutation: a concrete 20-minute adoption plan.
 
 > Because the tournament is confounded, this is a proposal—not proof that every inherited element caused lift.
 
@@ -36,7 +36,7 @@
 
 ### Robustness
 
-> One seed can flatter a model, so I stress-test the entire loop across 50 independent cohorts—840,000 synthetic sessions. Variant B remains stable, Variant F usually clears holdout, and the system still surfaces the runs where evidence is inconclusive. You can open those counterexample seeds instead of hiding them.
+> One seed can flatter a model, so I stress-test the entire loop across 50 independent cohorts—840,000 synthetic sessions. Under the defaults, Variant B wins 49 discovery cohorts, but the dynamically composed challenger clears only 6 holdouts; 43 return no decision and the incumbent wins once. That refusal to manufacture improvement is the point. You can inspect every exception, change the policy, and rerun the study.
 
 ### Close
 
@@ -69,7 +69,7 @@ Yes. That is why EVOLVE calls the output a challenger and tests it against the i
 
 ### What is the real primary metric?
 
-Qualified demos divided by randomized unique visitors. Not CTR. Not raw form fills. The lead must match the target buyer and organization profile.
+Qualified meeting completions divided by eligible, exposed, randomized unique visitors—an intent-to-treat metric. Not CTR. Not raw form fills. The lead must be a decision-maker with target-organization fit.
 
 ### What would you do after launch?
 

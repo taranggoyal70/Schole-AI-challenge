@@ -28,8 +28,8 @@ _Avoid_: Skills gap, low engagement
 A visitor from a target organization who is evaluating whether Scholé could close its adoption gap.
 _Avoid_: Learner, generic traffic
 
-**Qualified demo**:
-A completed demo request from a **Prospect** whose role and organization match the target profile. It is the primary business outcome for the experiment.
+**Qualified meeting**:
+A completed meeting request from a **Prospect** whose role is a target decision-maker and whose simulated organization-fit score is at least 0.5. It is the primary business outcome for the experiment.
 _Avoid_: CTA click, lead, signup
 
 **Behavior signal**:
@@ -40,9 +40,13 @@ _Avoid_: Conversion, result
 An exploratory comparison of five substantially different landing-page strategies intended to discover promising positioning, structure, and interaction patterns. It generates hypotheses but does not isolate the causal effect of any single page element.
 _Avoid_: A/B test, causal experiment
 
-**Control**:
-The baseline landing-page concept against which the four alternative concepts are compared.
-_Avoid_: Winner, original truth
+**Declared baseline**:
+The comparison concept named in the experiment design. Discovery defaults to Variant A; a pairwise holdout uses the current incumbent. The engine does not special-case either concept ID.
+_Avoid_: Permanent control, winner, original truth
+
+**Randomized unique visitor**:
+A synthetic visitor assigned once to exactly one treatment arm through seeded blocked randomization. The visitor, not a page-session clone, is the unit of analysis.
+_Avoid_: Reused visitor, impression
 
 **Generated challenger**:
 A new landing-page concept informed by the tournament’s business outcomes and behavior signals. It is a hypothesis for a controlled follow-up experiment, not a proven optimum.
@@ -60,8 +64,8 @@ _Avoid_: Customer research, production experiment, proof
 An explicit, adjustable belief about traffic composition or how visitor traits and page concepts influence behavior.
 _Avoid_: Finding, observed fact
 
-**Evidence threshold**:
-The minimum probability and qualified-demo volume required before the system recommends one concept over the **Control**.
+**Decision policy**:
+The declared minimum practical lift, posterior probability, probability-best threshold for discovery, and qualified-meeting volume required before the system recommends one concept over its comparator.
 _Avoid_: Highest observed rate, statistical significance
 
 **No decision**:
