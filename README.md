@@ -154,16 +154,151 @@ pnpm test
 pnpm build
 ```
 
-## Architecture
+## Technical architecture
 
-- React + TypeScript + Vite
-- deterministic seeded simulation
-- blocked random assignment with unique visitor IDs
-- beta-binomial posterior sampling
-- configurable, symmetric decision policy
-- lazy-loaded analytical charts
-- responsive, keyboard-accessible interaction
-- no API keys, backend, or fabricated production data
+EVOLVE is a client-side analytical application. The browser owns the complete
+experiment lifecycle: configuration, randomization, synthetic behavior,
+inference, challenger generation, holdout evaluation, and export. There is no
+backend and no hidden result payload.
+
+```mermaid
+flowchart LR
+  subgraph Browser["Browser runtime — React + TypeScript"]
+    UI["Guided journey + Experiment Lab"]
+    Inputs["Traffic assumptions\nDecision policy\nSeed"]
+    Concepts["Concept registry\nVariants A–E"]
+
+    subgraph Engine["Experiment engine"]
+      Assign["Blocked random assignment\nOne visitor → one arm"]
+      Sessions["Synthetic session model\nScroll · proof · interaction · CTA · meeting"]
+      Metrics["Metric aggregation\nOutcome + diagnostics + guardrails"]
+      Posterior["Beta-binomial posterior\n4,000 deterministic draws"]
+      Decide{"Declared decision policy"}
+    end
+
+    Generate["Evolution engine\nComputed gene lineage + mutation"]
+    Holdout["Pairwise holdout\nShifted unseen cohort"]
+    Robustness["50-cohort robustness study\nCounterexample inspector"]
+    Export["Production experiment plan\nMarkdown download"]
+
+    UI --> Inputs
+    Inputs --> Assign
+    Concepts --> Assign
+    Assign --> Sessions
+    Sessions --> Metrics
+    Metrics --> Posterior
+    Posterior --> Decide
+    Decide --> Generate
+    Generate --> Holdout
+    Inputs --> Holdout
+    Holdout --> Robustness
+    Inputs --> Robustness
+    Holdout --> Export
+  end
+```
+
+### Experiment lifecycle
+
+1. **Declare the design.** `SimulatorConfig` defines the seed, traffic mix, and
+   sample size. `DecisionPolicy` defines the minimum practical lift,
+   probability requirements, and minimum outcome volume. The design names its
+   baseline explicitly.
+2. **Create one randomized population.** The engine creates
+   `variants × sessionsPerVariant` unique visitors, shuffles an exactly balanced
+   assignment vector, and assigns every visitor to one arm only.
+3. **Separate sources of randomness.** Assignment, visitor traits, behavioral
+   outcomes, and posterior sampling use deterministic seeded streams. The same
+   inputs reproduce the same experiment without coupling treatment assignment
+   to visitor generation.
+4. **Simulate the journey.** Persona, organization fit, intent, attention, pain
+   priority, device, and page-gene profile influence bounce, scroll, proof,
+   interaction, CTA, and meeting completion through inspectable probability
+   functions.
+5. **Aggregate the metric hierarchy.** The primary metric is qualified meetings
+   per randomized visitor. CTA rate, interaction, scroll, and dwell explain the
+   funnel. Qualification, unqualified-request share, device rates, and
+   allocation integrity expose possible regressions.
+6. **Estimate uncertainty.** For each arm, the engine samples 4,000 draws from a
+   `Beta(qualified + 1, visitors - qualified + 1)` posterior. Those draws
+   produce credible intervals, probability of being best, and probability of
+   clearing the practical-lift threshold.
+7. **Apply the decision contract.** Discovery can select an alternative, retain
+   the declared baseline, or return no decision. The pairwise holdout applies
+   the same minimum-lift rule in both directions.
+8. **Generate from evidence.** The evolution engine derives the promise and
+   structure from the outcome leader, the interaction and proof genes from
+   their strongest behavior signals, and one explicit exploratory mutation.
+   The resulting `modelProfile` controls how the challenger behaves in the
+   holdout; Variant F is not a fixed result card.
+9. **Test generalization.** The holdout changes the seed and traffic mix only
+   after generation. The robustness study repeats the entire discovery →
+   generation → holdout loop across 50 cohorts and retains counterexamples.
+
+### Decision modes
+
+| Concern | Multi-arm discovery | Pairwise holdout |
+| --- | --- | --- |
+| Comparator | Declared baseline concept | Current incumbent |
+| Candidate set | Five initial concepts | Incumbent + generated challenger |
+| Evidence | Outcome volume, P(best), P(practical lift) | Outcome volume and symmetric P(practical lift) |
+| Possible result | Alternative wins, baseline retained, or no decision | Challenger wins, incumbent retained, or no decision |
+| Purpose | Discover promising strategic territory | Test whether the generated hypothesis generalizes |
+
+### Module boundaries
+
+| Module | Responsibility |
+| --- | --- |
+| [`src/App.tsx`](./src/App.tsx) | Application state, guided/lab modes, and lifecycle orchestration |
+| [`src/data/concepts.ts`](./src/data/concepts.ts) | Initial concept registry and challenger presentation template |
+| [`src/lib/prng.ts`](./src/lib/prng.ts) | Seeded random-number and probability-sampling primitives |
+| [`src/lib/simulation.ts`](./src/lib/simulation.ts) | Visitor creation, assignment, session outcomes, posterior inference, and decisions |
+| [`src/lib/evolution.ts`](./src/lib/evolution.ts) | Evidence-derived gene selection, numerical lineage, and challenger composition |
+| [`src/lib/robustness.ts`](./src/lib/robustness.ts) | Repeated-cohort orchestration, stability summaries, and counterexample selection |
+| [`src/components/ResultsPanel.tsx`](./src/components/ResultsPanel.tsx) | Primary metric, uncertainty, decision-policy, and guardrail presentation |
+| [`src/components/RobustnessObservatory.tsx`](./src/components/RobustnessObservatory.tsx) | Incremental 50-cohort execution and stale-result protection |
+| [`src/components/HoldoutStage.tsx`](./src/components/HoldoutStage.tsx) | Holdout verdict and production experiment-plan export |
+| [`src/types.ts`](./src/types.ts) | Shared domain contracts for concepts, visitors, experiments, metrics, and lineage |
+
+### State and data flow
+
+- React state holds the current guided step, Lab assumptions, decision policy,
+  selected preview, and robustness result.
+- Derived experiment objects are memoized from configuration and policy inputs.
+- The 50-cohort study yields to the browser between batches so the interface
+  remains responsive.
+- A configuration or policy change invalidates the robustness signature and
+  visibly marks the previous study stale.
+- Refreshing resets the application to documented defaults; no visitor record
+  or experiment result is persisted.
+
+### Why this architecture
+
+- **Client-only execution** makes every assumption and calculation inspectable
+  during a hiring exercise.
+- **Determinism** makes surprising cohorts reproducible and debuggable.
+- **A declared decision policy** prevents the UI from crowning whichever bar is
+  tallest.
+- **Generation before holdout** prevents holdout leakage into gene selection.
+- **Domain types and pure engines** keep the simulation testable independently
+  from React.
+- **Explicit no-decision states** distinguish insufficient evidence from a
+  failed interface.
+
+### Production extension path
+
+The synthetic engine is an adapter for demonstrating the learning loop. A real
+deployment would preserve the decision and presentation layers while replacing
+the synthetic session source with:
+
+1. server-side stable visitor assignment;
+2. an exposure and event pipeline;
+3. CRM-backed meeting qualification;
+4. persisted experiment definitions and immutable policy versions;
+5. automated sample-ratio, bot, performance, and data-quality monitoring;
+6. a human approval gate before generated copy reaches production traffic.
+
+This boundary is intentional: simulation validates the machinery; randomized
+market traffic validates the business claim.
 
 ## Runtime and data integrity
 
