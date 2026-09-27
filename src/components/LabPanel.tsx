@@ -10,6 +10,7 @@ import type {
 } from "../types";
 import { RobustnessObservatory } from "./RobustnessObservatory";
 import { ResultsPanel } from "./ResultsPanel";
+import { ObservedExperimentPanel } from "./ObservedExperimentPanel";
 
 interface SliderDefinition {
   key: keyof Pick<
@@ -322,6 +323,7 @@ export function LabPanel({
         policy={policy}
         onInspectSeed={(seed) => onConfig({ ...config, seed })}
       />
+      <ObservedExperimentPanel policy={policy} />
     </main>
   );
 }

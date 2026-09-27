@@ -4,6 +4,12 @@ An inspectable landing-page evolution system built for the Scholé Growth Engine
 
 EVOLVE compares five strategically different landing pages, simulates visitor sessions with explicit assumptions, selects an incumbent using a Bayesian evidence policy, generates a challenger with visible lineage, and tests that challenger against an unseen holdout cohort.
 
+The Experiment Lab also accepts a real two-arm aggregate export
+(`variant,sessions,qualified_meetings`). Observed results stay in the browser,
+run through the same pre-declared Bayesian lift and volume policy, surface
+sample-ratio mismatch, and can be exported as a decision record. Synthetic
+traffic is never presented as observed customer evidence.
+
 ## Challenge coverage
 
 | Requirement from the brief | Where EVOLVE satisfies it |
@@ -17,6 +23,7 @@ EVOLVE compares five strategically different landing pages, simulates visitor se
 | Generate a new variation | Generation 1 creates Variant F from inherited page genes plus one mutation |
 | Explain what changed and why | Every generated gene shows its source, evidence, and confidence |
 | Learn over time | Discovery → generation → unseen holdout → real-test export |
+| Evaluate real outcomes | Browser-only CSV import → validation → Bayesian decision record |
 | Go beyond the requirements | Same-buyer replay, no-decision state, counterfactual lab, 50-cohort robustness study, holdout gauntlet, and production experiment plan |
 
 ## The product decision
